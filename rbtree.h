@@ -6,28 +6,66 @@
 #include <utility>
 #include <iostream>
 #include <string>
+#include <functional>
 
-template <typename T>
-class RBTree {
-    enum class Color : bool {
-        Red = false, Black = true
+namespace rb {
+
+using ColorValue = uintptr_t;
+struct Color {
+    enum : ColorValue {
+        Red = 1ULL << 0,
+        Black = 1ULL << 1,
+        Mask = Red | Black,
     };
-    struct Node {
-        T data;
-        Color color{Color::Red};
-        Node* parent{nullptr};
-        Node* left{nullptr};
-        Node* right{nullptr};
-    };
+};
+
+struct Node;
+struct NodePtr {
+
+    static constexpr uintptr_t kNIL{Color::Black | reinterpret_cast<uintptr_t>(nullptr)};
+
+    //template <typename T>
+    NodePtr(Node* n) : raw{Color::Red | reinterpret_cast<uintptr_t>(n)} {}
+    NodePtr() : raw{kNIL} {}
+
+    uintptr_t raw;
+    Node* node() { return reinterpret_cast<Node*>(raw & ~(alignof(Node) - 1)); }
+    const Node* node() const { return reinterpret_cast<const Node*>(raw & ~(alignof(Node) - 1)); }
+    ColorValue color() const { return raw & Color::Mask; }
+    Node* operator->() { return node(); }
+    const Node* operator->() const { return node(); }
+
+    explicit operator bool() const noexcept { return node() != nullptr; }
+};
+
+//template <typename T = int>
+struct Node {
+    using T = int;
+    NodePtr parent;
+    NodePtr left;
+    NodePtr right;
+    T data;
+    Node(const T& data_)
+        : parent{}, left{}, right{}, data{data_}
+    {
+    }
+};
+
+//template <typename T = int, typename Cmp = std::less<>>
+class Tree {
+    using T = int;
+    using Cmp = std::less<>;
+    static_assert(alignof(Node) >= 4, "Alignment faulty");
 
 public:
 
-    RBTree() = default;
-    ~RBTree() { destroy(m_root); }
+    Tree() = default;
+    ~Tree() { destroy(m_root); }
 
-    RBTree& insert(const T& data)
+    Tree& insert(const T& data)
     {
-        Node* z = new Node{data};
+        Node* node{new Node{data}};
+        NodePtr z{node};
         bst_insert(z);
         fix_insert(z);
         return *this;
@@ -38,15 +76,16 @@ public:
         std::cout << '\n';
     }
 private:
-    Node* m_root{};
+    NodePtr m_root{};
+    Cmp m_cmp{};
 
-    static Color color_of(const Node* n)
+    static ColorValue color_of(const NodePtr& n)
     {
-        return n ? n->color : Color::Black;
+        return n ? n.color() : Color::Black;
     }
-    static Node* grandparent_of(const Node* n)
+    static NodePtr& grandparent_of(NodePtr& n)
     {
-        return (n && n->parent) ? n->parent->parent : nullptr;
+        return (n && n->parent) ? n->parent->parent : NodePtr{};
     }
     static Node* uncle_of(const Node* n)
     {
@@ -86,21 +125,21 @@ private:
         x->parent = y;
     }
 
-    void bst_insert(Node* z)
+    void bst_insert(NodePtr& z)
     {
-        Node* parent{nullptr};
-        Node* curr{m_root};
+        NodePtr parent{};
+        NodePtr curr{m_root};
 
         while (curr)
         {
             parent = curr;
-            curr = (z->data < curr->data) ? curr->left : curr->right;
+            curr = m_cmp(z->data, curr->data) ? curr->left : curr->right;
         }
 
         z->parent = parent;
         if (!parent)
             m_root = z;
-        else if (z->data < parent->data)
+        else if (m_cmp(z->data, parent->data))
             parent->left = z;
         else
             parent->right = z;
@@ -169,5 +208,7 @@ private:
         delete n;
     }
 };
+
+} // namespace rb
 
 #endif /* #ifndef RBTREE_H */
