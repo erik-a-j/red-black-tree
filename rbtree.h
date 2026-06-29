@@ -22,26 +22,23 @@ namespace rb {
  */
 
 namespace Color {
-enum Value : uint8_t {
-    RED = 0, BLACK = 1
+enum Value : bool {
+    RED = false, BLACK = true
 };
 }
 namespace Dir {
-enum Value : uint8_t {
-    LEFT = 0, RIGHT = 1
+enum Value : bool {
+    LEFT = false, RIGHT = true
 };
 }
 
 class NodeBase {
-    struct NIL_tag {};
-    NodeBase(NIL_tag)
-        : p{this}, child{this, this}, color{Color::BLACK}
-    {
-    }
 protected:
-    NodeBase() : p{NIL()}, child{NIL(), NIL()}, color{Color::RED} {}
-
+    NodeBase(NodeBase* nil) : p{nil}, child{nil, nil}, color{Color::RED} {}
 public:
+    struct NIL_tag {};
+    NodeBase(NIL_tag) : p{this}, child{this, this}, color{Color::BLACK} {}
+
     NodeBase* p;
     NodeBase* child[2];
     Color::Value color;
@@ -52,25 +49,15 @@ public:
     NodeBase* const& left() const noexcept { return child[Dir::LEFT]; }
     NodeBase* const& right() const noexcept { return child[Dir::RIGHT]; }
     NodeBase* const& uncle() const noexcept { return p->p->child[p == p->p->left()]; }
-
-    static NodeBase* NIL()
-    {
-        static NodeBase nil{NIL_tag{}};
-        return &nil;
-    }
 };
 
-template <typename K, typename V>
-struct Node : NodeBase {
-    K key;
-    V value;
-
-    Node(const K& k, const V& v)
-        : NodeBase{}, key{k}, value{v}
-    {
-    }
-
+struct TreeBase {
+    NodeBase*& root;
+    NodeBase* NIL;
 };
+
+void rb_rotate(TreeBase t, NodeBase* x, Dir::Value dir);
+void rb_fix_insert(TreeBase t, NodeBase* z);
 
 template <typename K, typename V, typename Cmp = std::less<>, typename Alloc = std::allocator<V>>
 class Tree {
@@ -78,16 +65,27 @@ class Tree {
     //using V = float;
     //using Cmp = std::less<>;
     //using Alloc = std::allocator<V>;
-    using Node = rb::Node<K, V>;
+    //using Node = rb::Node<K, V>;
+
+    struct Node : NodeBase {
+        K key;
+        V value;
+
+        Node(NodeBase* nil, const K& k, const V& v)
+            : NodeBase{nil}, key{k}, value{v}
+        {}
+    };
+
     using NodeAllocator = std::allocator_traits<Alloc>::template rebind_alloc<Node>;
     using NodeTraits = std::allocator_traits<Alloc>::template rebind_traits<Node>;
 
-    NodeAllocator m_alloc;
+    NodeBase m_nil;
     NodeBase* m_root;
-    Cmp m_cmp;
+    NodeAllocator m_alloc{};
+    Cmp m_cmp{};
 public:
 
-    Tree() : m_alloc{}, m_root{Node::NIL()}, m_cmp{} {}
+    Tree() : m_nil{NodeBase::NIL_tag{}}, m_root{&m_nil} {}
     ~Tree()
     {
         destroy(m_root);
@@ -95,7 +93,8 @@ public:
 
     Tree& insert(const K& key, const V& value)
     {
-        rb_fix_insert(rb_insert(key, value));
+        auto [z, need_fix] = rb_insert(key, value);
+        if (need_fix) rb_fix_insert(m_root, NIL(), z);
         return *this;
     }
     void print_inorder() const
@@ -104,105 +103,62 @@ public:
         std::cout << '\n';
     }
 private:
-    void rotate(NodeBase* x, Dir::Value dir)
+    Node* make_node(const K& k, const V& v)
     {
-        NodeBase* y = x->child[!dir];    // set y
-        x->child[!dir] = y->child[dir];  // turn y's dir subtree into x's !dir subtree
-        if (y->child[dir] != NodeBase::NIL())
-            y->child[dir]->p = x;
-
-        y->p = x->p;                     // link x's parent to y
-        if (x->p == NodeBase::NIL())
-            m_root = y;
-        else if (x == x->p->child[dir])
-            x->p->child[dir] = y;
-        else
-            x->p->child[!dir] = y;
-
-        y->child[dir] = x;               // put x on y's dir
-        x->p = y;
+        Node* node = NodeTraits::allocate(m_alloc, 1);
+        try { NodeTraits::construct(m_alloc, node, NIL(), k, v); }
+        catch (...) { NodeTraits::deallocate(m_alloc, node, 1); throw; }
+        return node;
     }
+    static const K& key_of(const Node* n) { return n->key; }
+    static const K& key_of(const NodeBase* n) { return key_of(static_cast<const Node*>(n)); }
+    static const V& value_of(const Node* n) { return n->value; }
+    static const V& value_of(const NodeBase* n) { return value_of(static_cast<const Node*>(n)); }
+    static V& value_of(Node* n) { return n->value; }
+    static V& value_of(NodeBase* n) { return value_of(static_cast<Node*>(n)); }
+    NodeBase* NIL() noexcept { return &m_nil; }
+    const NodeBase* NIL() const noexcept { return &m_nil; }
 
-    NodeBase* rb_insert(const K& k, const V& v)
+    std::pair<NodeBase*, bool> rb_insert(const K& k, const V& v)
     {
-        NodeBase* p = Node::NIL();
+        NodeBase* p = NIL();
         NodeBase* curr{m_root};
 
-        while (curr != Node::NIL())
+        while (curr != NIL())
         {
-            const K& curr_k = static_cast<Node*>(curr)->key;
-            if (m_cmp(k, curr_k))      curr = curr->left();
-            else if (m_cmp(curr_k, k)) curr = curr->right();
+            p = curr;
+            if (m_cmp(k, key_of(curr)))      curr = curr->left();
+            else if (m_cmp(key_of(curr), k)) curr = curr->right();
             else
             {
-                static_cast<Node*>(curr)->value = v;
-                return curr;
+                value_of(curr) = v;
+                return {curr, false};
             }
-            p = curr;
         }
 
-        Node* z = NodeTraits::allocate(m_alloc, 1);
-        NodeTraits::construct(m_alloc, z, k, v);
+        Node* z = make_node(k, v);
         z->p = p;
 
-        const K& p_key = static_cast<Node*>(p)->key;
-        if (p == Node::NIL())          m_root = z;
-        else if (m_cmp(z->key, p_key)) p->left() = z;
-        else                           p->right() = z;
+        if (p == NIL())                    m_root = z;
+        else if (m_cmp(z->key, key_of(p))) p->left() = z;
+        else                               p->right() = z;
 
-        return z;
+        return {z, true};
     }
 
-    void rb_fix_insert(NodeBase* z)
-    {
-        while (z->p->color == Color::RED)
-        {
-            if (z->uncle()->color == Color::RED)
-            {
-                z->p->color = Color::BLACK;
-                z->uncle()->color = Color::BLACK;
-                z->p->p->color = Color::RED;
-                z = z->p->p;
-            }
-            else if (z->p == z->p->p->left())
-            {
-                if (z == z->p->right())
-                {
-                    z = z->p;
-                    rotate(z, Dir::LEFT);
-                }
-                z->p->color = Color::BLACK;
-                z->p->p->color = Color::RED;
-                rotate(z->p->p, Dir::RIGHT);
-            }
-            else
-            {
-                if (z == z->p->left())
-                {
-                    z = z->p;
-                    rotate(z, Dir::RIGHT);
-                }
-                z->p->color = Color::BLACK;
-                z->p->p->color = Color::RED;
-                rotate(z->p->p, Dir::LEFT);
-            }
-        }
-        m_root->color = Color::BLACK;
-    }
 
     void inorder(const NodeBase* n) const
     {
-        if (n == NodeBase::NIL()) return;
+        if (n == NIL()) return;
         inorder(n->left());
-        const Node* node = static_cast<const Node*>(n);
-        std::cout << (node->color == Color::RED ? "(\x1b[38;5;196mR\x1b[0m)" : "(\x1b[38;5;8mB\x1b[0m)") << node->key << ":" << node->value
+        std::cout << (n->color == Color::RED ? "(\x1b[38;5;196mR\x1b[0m)" : "(\x1b[38;5;8mB\x1b[0m)") << key_of(n) << ":" << value_of(n)
             << " ";
         inorder(n->right());
     }
 
     void destroy(NodeBase* n)
     {
-        if (n == NodeBase::NIL()) return;
+        if (n == NIL()) return;
         destroy(n->left());
         destroy(n->right());
         Node* node = static_cast<Node*>(n);
