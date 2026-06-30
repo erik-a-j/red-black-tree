@@ -22,14 +22,16 @@ namespace rb {
  */
 
 namespace Color {
-enum Value : bool {
+enum : bool {
     RED = false, BLACK = true
 };
+using Value = bool;
 }
 namespace Dir {
-enum Value : bool {
+enum : bool {
     LEFT = false, RIGHT = true
 };
+using Value = bool;
 }
 
 class NodeBase {
@@ -57,7 +59,9 @@ struct TreeBase {
 };
 
 void rb_rotate(TreeBase t, NodeBase* x, Dir::Value dir);
-void rb_fix_insert(TreeBase t, NodeBase* z);
+void rb_insert_fixup(TreeBase t, NodeBase* z);
+void rb_delete(TreeBase t, NodeBase* z);
+void rb_delete_fixup(TreeBase t, NodeBase* x);
 
 template <typename K, typename V, typename Cmp = std::less<>, typename Alloc = std::allocator<V>>
 class Tree {
@@ -73,7 +77,8 @@ class Tree {
 
         Node(NodeBase* nil, const K& k, const V& v)
             : NodeBase{nil}, key{k}, value{v}
-        {}
+        {
+        }
     };
 
     using NodeAllocator = std::allocator_traits<Alloc>::template rebind_alloc<Node>;

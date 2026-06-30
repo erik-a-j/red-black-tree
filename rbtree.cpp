@@ -27,39 +27,39 @@ void rb_rotate(TreeBase t, NodeBase* x, Dir::Value dir)
     y->child[dir] = x;               // put x on y's dir
     x->p = y;
 }
+static inline void rb_rotate_left(TreeBase t, NodeBase* x)
+{
+    rb_rotate(t, x, Dir::LEFT);
+}
+static inline void rb_rotate_right(TreeBase t, NodeBase* x)
+{
+    rb_rotate(t, x, Dir::RIGHT);
+}
 
-void rb_fix_insert(TreeBase t, NodeBase* z)
+void rb_insert_fixup(TreeBase t, NodeBase* z)
 {
     while (z->p->color == Color::RED)
     {
-        if (z->uncle()->color == Color::RED)
+        Dir::Value dir = z->p == z->p->p->right();
+        NodeBase* y = z->p->p->child[!dir];
+
+        if (y->color == Color::RED)          // case 1
         {
             z->p->color = Color::BLACK;
-            z->uncle()->color = Color::BLACK;
+            y->color = Color::BLACK;
             z->p->p->color = Color::RED;
             z = z->p->p;
         }
-        else if (z->p == z->p->p->left())
-        {
-            if (z == z->p->right())
-            {
-                z = z->p;
-                rb_rotate(t, z, Dir::LEFT);
-            }
-            z->p->color = Color::BLACK;
-            z->p->p->color = Color::RED;
-            rb_rotate(t, z->p->p, Dir::RIGHT);
-        }
         else
         {
-            if (z == z->p->left())
+            if (z == z->p->child[!dir])      // case 2: z is the "inner" grandchild
             {
                 z = z->p;
-                rb_rotate(t, z, Dir::RIGHT);
+                rb_rotate(t, z, dir);
             }
-            z->p->color = Color::BLACK;
+            z->p->color = Color::BLACK;      // case 3
             z->p->p->color = Color::RED;
-            rb_rotate(t, z->p->p, Dir::LEFT);
+            rb_rotate(t, z->p->p, !dir);
         }
     }
     t.root->color = Color::BLACK;
@@ -111,7 +111,50 @@ void rb_delete(TreeBase t, NodeBase* z)
         y->color = z->color;
     }
 
-    if (y_color == Color::BLACK) {} // fix
+    if (y_color == Color::BLACK)
+        rb_delete_fixup(t, x);
+}
+
+void rb_delete_fixup(TreeBase t, NodeBase* x)
+{
+    while (x != t.root && x->color == Color::BLACK)
+    {
+        Dir::Value dir = x == x->p->right();      // side x is on
+        NodeBase* w = x->p->child[!dir];          // sibling
+
+        if (w->color == Color::RED)               // case 1
+        {
+            w->color = Color::BLACK;
+            x->p->color = Color::RED;
+            rb_rotate(t, x->p, dir);
+            w = x->p->child[!dir];                // new sibling
+        }
+
+        if (w->left()->color == Color::BLACK &&   // case 2
+            w->right()->color == Color::BLACK)
+        {
+            w->color = Color::RED;
+            x = x->p;
+        }
+        else
+        {
+            if (w->child[!dir]->color == Color::BLACK)    // case 3: far nephew black
+            {
+                w->child[dir]->color = Color::BLACK;      //   near nephew → black
+                w->color = Color::RED;
+                rb_rotate(t, w, !dir);
+                w = x->p->child[!dir];                    //   refetch sibling
+            }
+            w->color = x->p->color;                       // case 4
+            x->p->color = Color::BLACK;
+            w->child[!dir]->color = Color::BLACK;         //   far nephew → black
+            rb_rotate(t, x->p, dir);
+            x = t.root;
+        }
+    }
+    x->color = Color::BLACK;
 }
 
 } // namespace rb
+
+
