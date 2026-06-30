@@ -98,7 +98,9 @@ void rb_delete(TreeBase t, NodeBase* z)
         y_color = y->color;
         x = y->right();
         if (y->p == z)
+        {
             x->p = y;
+        }
         else
         {
             rb_transplant(t, y, y->right());

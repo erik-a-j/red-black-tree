@@ -61,7 +61,7 @@ struct TreeBase {
 void rb_rotate(TreeBase t, NodeBase* x, Dir::Value dir);
 void rb_insert_fixup(TreeBase t, NodeBase* z);
 void rb_delete(TreeBase t, NodeBase* z);
-void rb_delete_fixup(TreeBase t, NodeBase* x);
+//void rb_delete_fixup(TreeBase t, NodeBase* x);
 
 template <typename K, typename V, typename Cmp = std::less<>, typename Alloc = std::allocator<V>>
 class Tree {
