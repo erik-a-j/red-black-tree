@@ -67,20 +67,20 @@ protected:
 
     void rb_rotate(NodeBase* x, Dir::Value dir)
     {
-        NodeBase* y = x->child[!dir];       // set y
+        NodeBase* y = x->child[!dir];
         x->child[!dir] = y->child[dir]; // turn y's dir subtree into x's !dir subtree
         if (y->child[dir] != NIL())
-            y->child[dir]->p = x;
+            y->child[dir]->p = x;       // x becomes parent of the subtree's root
 
-        y->p = x->p;                    // link x's parent to y
+        y->p = x->p;                    // x's parent becomes y's parent
         if (x->p == NIL())
-            m_root = y;
+            m_root = y;                 // y becomes the root
         else if (x == x->p->child[dir])
-            x->p->child[dir] = y;
+            x->p->child[dir] = y;       // y becomes a dir child
         else
-            x->p->child[!dir] = y;
+            x->p->child[!dir] = y;      // y becomes a !dir child
 
-        y->child[dir] = x;              // put x on y's dir
+        y->child[dir] = x;              // x becomes y's dir child
         x->p = y;
     }
     void rb_rotate_left(NodeBase* x) { rb_rotate(x, Dir::LEFT); }

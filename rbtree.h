@@ -104,7 +104,7 @@ public:
                     else if (r == Rules::R5)
                         os << "VIOLATION: black-height mismatch at key " << key_of(n)
                         << "  (left=" << lh << ", right=" << rh << ")\n";
-                });
+                    });
             }
             if (ok)
                 os << "All RB properties satisfied. BH=" << bh << '\n';
@@ -179,8 +179,8 @@ private:
     {
         if (n == NIL()) return;
         inorder(n->left());
-        std::cout << (n->color == Color::RED ? "(\x1b[38;5;196mR\x1b[0m)" : "(\x1b[38;5;8mB\x1b[0m)") << key_of(n) << ":" << value_of(n)
-            << " ";
+        std::cout << (n->color == Color::RED ? "(\x1b[38;5;196mR\x1b[0m)" : "(\x1b[38;5;8mB\x1b[0m)")
+            << key_of(n) << " ";
         inorder(n->right());
     }
 
