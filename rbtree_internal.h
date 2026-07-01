@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <functional>
 
 namespace rb {
 
@@ -38,14 +39,15 @@ public:
 
     NodeBase*& left() noexcept { return child[Dir::LEFT]; }
     NodeBase*& right() noexcept { return child[Dir::RIGHT]; }
-    NodeBase* const& left() const noexcept { return child[Dir::LEFT]; }
-    NodeBase* const& right() const noexcept { return child[Dir::RIGHT]; }
+    const NodeBase* left() const noexcept { return child[Dir::LEFT]; }
+    const NodeBase* right() const noexcept { return child[Dir::RIGHT]; }
 };
 
 class TreeBase {
     TreeBase(const TreeBase& o) = delete;
 protected:
-    using Callback = void(*)(const NodeBase*, void*);
+    template <typename N>
+    using TraversalCB = std::type_identity_t<std::function<void(N*)>>;
 
     NodeBase* m_root;
 
@@ -91,7 +93,14 @@ protected:
     void rb_delete_fixup(NodeBase* p, NodeBase* x);
     void rb_delete(NodeBase* z);
 
-    static void rb_inorder(NodeBase* root, Callback cb, void* usrdata);
+    template <typename N>
+    static void rb_inorder(N* x, TraversalCB<N> cb);
+
+    template <typename N>
+    static void rb_preorder(N* x, TraversalCB<N> cb);
+
+    template <typename N>
+    static void rb_postorder(N* x, TraversalCB<N> cb);
 
     /* Properties of red-black trees
     *
