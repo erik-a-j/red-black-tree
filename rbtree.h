@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <utility>
 #include "rbtree_internal.h"
 
 namespace rb {
@@ -31,41 +32,39 @@ class Tree : private TreeBase {
         K key;
         V value;
 
-        Node(NodeBase* nil, const K& k, const V& v)
-            : NodeBase{nil}, key{k}, value{v}
-        {
-        }
+        Node(const K& k, const V& v)
+            : NodeBase{}, key{k}, value{v}
+        {}
     };
 
-    using NodeAllocatorType = std::allocator_traits<Alloc>::template rebind_alloc<Node>;
+    using NodeAllocator = std::allocator_traits<Alloc>::template rebind_alloc<Node>;
     using NodeTraits = std::allocator_traits<Alloc>::template rebind_traits<Node>;
 
-    struct NodeAllocator : NodeAllocatorType {
-        Node* create(NodeBase* nil, const K& k, const V& v)
-        {
-            Node* node = NodeTraits::allocate(*this, 1);
-            try { NodeTraits::construct(*this, node, nil, k, v); }
-            catch (...) { NodeTraits::deallocate(*this, node, 1); throw; }
-            return node;
-        }
-        void destroy(Node* n)
-        {
-            NodeTraits::destroy(*this, n);
-            NodeTraits::deallocate(*this, n, 1);
-        }
-    };
-
-    NodeAllocator m_alloc{};
-    Cmp m_cmp{};
+    [[no_unique_address]] NodeAllocator m_alloc{};
+    [[no_unique_address]] Cmp m_cmp{};
     size_t m_size{0};
 public:
 
-    Tree() : TreeBase{} {}
+    Tree()
+        : TreeBase{}, m_alloc{}, m_cmp{}, m_size{0} {}
+    Tree(Tree&& o) noexcept
+        : TreeBase{std::move(o)}, m_alloc{std::move(o.m_alloc)}, m_cmp{std::move(o.m_cmp)}, m_size{0} {}
+
+    Tree& operator=(Tree&& o)
+    {
+        if (this != &o)
+        {
+            destroy(m_root);
+            TreeBase::move_from(std::move(o));
+            m_alloc = std::move(o.m_alloc);
+            m_cmp = std::move(o.m_cmp);
+            m_size = std::exchange(o.m_size, 0);
+        }
+        return *this;
+    }
 
     Tree(const Tree&) = delete;
     Tree& operator=(const Tree&) = delete;
-    Tree(Tree&&) = delete;
-    Tree& operator=(Tree&&) = delete;
 
     ~Tree()
     {
@@ -84,7 +83,7 @@ public:
         return erase_impl(key);
     }
 
-    bool verify(std::ostream& os)
+    /* bool verify(std::ostream& os)
     {
         bool ok{true};
         if (m_root != NIL())
@@ -110,11 +109,11 @@ public:
                 os << "All RB properties satisfied. BH=" << bh << '\n';
         }
         return ok;
-    }
+    } */
 
     void print_inorder() const
     {
-        inorder(m_root);
+        rb_inorder(m_root, inorder, nullptr);
         std::cout << '\n';
     }
 private:
@@ -128,7 +127,7 @@ private:
     NodeBase* find_node(const K& k)
     {
         NodeBase* curr = m_root;
-        while (curr != NIL())
+        while (curr)
         {
             if (m_cmp(k, key_of(curr)))      curr = curr->left();
             else if (m_cmp(key_of(curr), k)) curr = curr->right();
@@ -137,12 +136,25 @@ private:
         return curr;
     }
 
+    Node* create_node(const K& k, const V& v)
+    {
+        Node* node = NodeTraits::allocate(m_alloc, 1);
+        try { NodeTraits::construct(m_alloc, node, k, v); }
+        catch (...) { NodeTraits::deallocate(m_alloc, node, 1); throw; }
+        return node;
+    }
+    void destroy_node(Node* n)
+    {
+        NodeTraits::destroy(m_alloc, n);
+        NodeTraits::deallocate(m_alloc, n, 1);
+    }
+
     void insert_impl(const K& k, const V& v)
     {
-        NodeBase* p = NIL();
+        NodeBase* p{nullptr};
         NodeBase* curr{m_root};
 
-        while (curr != NIL())
+        while (curr)
         {
             p = curr;
             if (m_cmp(k, key_of(curr)))      curr = curr->left();
@@ -154,10 +166,10 @@ private:
             }
         }
 
-        Node* z = m_alloc.create(NIL(), k, v);
+        Node* z = create_node(k, v);
         z->p = p;
 
-        if (p == NIL())                    m_root = z;
+        if (!p)                            m_root = z;
         else if (m_cmp(z->key, key_of(p))) p->left() = z;
         else                               p->right() = z;
 
@@ -168,28 +180,27 @@ private:
     bool erase_impl(const K& k)
     {
         NodeBase* rem = find_node(k);
-        if (rem == NIL()) return false;
+        if (!rem) return false;
         rb_delete(rem);
-        m_alloc.destroy(static_cast<Node*>(rem));
+        destroy_node(static_cast<Node*>(rem));
         --m_size;
         return true;
     }
 
-    void inorder(const NodeBase* n) const
+    static void inorder(const NodeBase* n, void* usrdata)
     {
-        if (n == NIL()) return;
-        inorder(n->left());
+        (void)usrdata;
+        if (!n) return;
         std::cout << (n->color == Color::RED ? "(\x1b[38;5;196mR\x1b[0m)" : "(\x1b[38;5;8mB\x1b[0m)")
             << key_of(n) << " ";
-        inorder(n->right());
     }
 
     void destroy(NodeBase* n)
     {
-        if (n == NIL()) return;
+        if (!n) return;
         destroy(n->left());
         destroy(n->right());
-        m_alloc.destroy(static_cast<Node*>(n));
+        destroy_node(static_cast<Node*>(n));
     }
 };
 

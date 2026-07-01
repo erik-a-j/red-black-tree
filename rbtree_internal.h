@@ -30,11 +30,8 @@ enum class Rules {
 
 class NodeBase {
 protected:
-    NodeBase(NodeBase* nil) : p{nil}, child{nil, nil}, color{Color::RED} {}
+    NodeBase() : p{nullptr}, child{nullptr, nullptr}, color{Color::RED} {}
 public:
-    struct NIL_tag {};
-    NodeBase(NIL_tag) : p{this}, child{this, this}, color{Color::BLACK} {}
-
     NodeBase* p;
     NodeBase* child[2];
     Color::Value color;
@@ -46,60 +43,55 @@ public:
 };
 
 class TreeBase {
-    NodeBase m_nil;
+    TreeBase(const TreeBase& o) = delete;
 protected:
+    using Callback = void(*)(const NodeBase*, void*);
+
     NodeBase* m_root;
 
-    TreeBase() : m_nil{NodeBase::NIL_tag{}}, m_root{&m_nil} {}
+    TreeBase() noexcept : m_root{nullptr} {}
+    TreeBase(TreeBase&& o) noexcept : m_root{o.m_root} { o.m_root = nullptr; }
 
-    NodeBase* rb_minimum(NodeBase* n)
+    void move_from(TreeBase&& o) noexcept
     {
-        while (n->left() != NIL())
+        m_root = std::exchange(o.m_root, nullptr);
+    }
+
+    static bool is_black(NodeBase* n) noexcept
+    {
+        return !n || n->color;
+    }
+    static bool is_red(NodeBase* n) noexcept
+    {
+        return n && !n->color;
+    }
+
+    template <typename N>  // N deduces to NodeBase or const NodeBase
+    static N* rb_minimum(N* n)
+    {
+        while (n->left())
             n = n->left();
         return n;
     }
-    NodeBase* rb_maximum(NodeBase* n)
+    template <typename N>
+    static N* rb_maximum(N* n)
     {
-        while (n->right() != NIL())
+        while (n->right())
             n = n->right();
         return n;
     }
 
-    void rb_rotate(NodeBase* x, Dir::Value dir)
-    {
-        NodeBase* y = x->child[!dir];
-        x->child[!dir] = y->child[dir]; // turn y's dir subtree into x's !dir subtree
-        if (y->child[dir] != NIL())
-            y->child[dir]->p = x;       // x becomes parent of the subtree's root
-
-        y->p = x->p;                    // x's parent becomes y's parent
-        if (x->p == NIL())
-            m_root = y;                 // y becomes the root
-        else if (x == x->p->child[dir])
-            x->p->child[dir] = y;       // y becomes a dir child
-        else
-            x->p->child[!dir] = y;      // y becomes a !dir child
-
-        y->child[dir] = x;              // x becomes y's dir child
-        x->p = y;
-    }
+    void rb_rotate(NodeBase* x, Dir::Value dir);
     void rb_rotate_left(NodeBase* x) { rb_rotate(x, Dir::LEFT); }
     void rb_rotate_right(NodeBase* x) { rb_rotate(x, Dir::RIGHT); }
 
     void rb_insert_fixup(NodeBase* z);
 
-    void rb_transplant(NodeBase* u, NodeBase* v)
-    {
-        if (u->p == NIL())
-            m_root = v;
-        else if (u == u->p->left())
-            u->p->left() = v;
-        else
-            u->p->right() = v;
-        v->p = u->p;
-    }
-    void rb_delete_fixup(NodeBase* x);
+    void rb_transplant(NodeBase* u, NodeBase* v);
+    void rb_delete_fixup(NodeBase* p, NodeBase* x);
     void rb_delete(NodeBase* z);
+
+    static void rb_inorder(NodeBase* root, Callback cb, void* usrdata);
 
     /* Properties of red-black trees
     *
@@ -110,7 +102,7 @@ protected:
     *   5. For each node, all simple paths from the node to descendant leaves contain the
     *   same number of black nodes.
     */
-    template <typename F>
+    /* template <typename F>
     int rb_check_subtree(NodeBase* n, F&& cb)
     {
         if (n == NIL()) return 1;
@@ -127,11 +119,8 @@ protected:
             cb(Rules::R5, n, lh, rh);
 
         return lh + static_cast<int>(n->color);
-    }
+    } */
 
-
-    NodeBase* NIL() noexcept { return &m_nil; }
-    const NodeBase* NIL() const noexcept { return &m_nil; }
 };
 
 

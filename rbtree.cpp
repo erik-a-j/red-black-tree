@@ -2,14 +2,33 @@
 
 namespace rb {
 
+void TreeBase::rb_rotate(NodeBase* x, Dir::Value dir)
+{
+    NodeBase* y = x->child[!dir];
+    x->child[!dir] = y->child[dir]; // turn y's dir subtree into x's !dir subtree
+    if (y->child[dir])
+        y->child[dir]->p = x;       // x becomes parent of the subtree's root
+
+    y->p = x->p;                    // x's parent becomes y's parent
+    if (!x->p)
+        m_root = y;                 // y becomes the root
+    else if (x == x->p->child[dir])
+        x->p->child[dir] = y;       // y becomes a dir child
+    else
+        x->p->child[!dir] = y;      // y becomes a !dir child
+
+    y->child[dir] = x;              // x becomes y's dir child
+    x->p = y;
+}
+
 void TreeBase::rb_insert_fixup(NodeBase* z)
 {
-    while (z->p->color == Color::RED)
+    while (is_red(z->p))
     {
         Dir::Value dir = z->p == z->p->p->right();
         NodeBase* y = z->p->p->child[!dir];
 
-        if (y->color == Color::RED)          // case 1
+        if (is_red(y))                       // case 1
         {
             z->p->color = Color::BLACK;
             y->color = Color::BLACK;
@@ -30,21 +49,31 @@ void TreeBase::rb_insert_fixup(NodeBase* z)
     }
     m_root->color = Color::BLACK;
 }
+void TreeBase::rb_transplant(NodeBase* u, NodeBase* v)
+{
+    if (!u->p)                  m_root = v;         // was: u->p == NIL()
+    else if (u == u->p->left()) u->p->left() = v;
+    else                        u->p->right() = v;
+    if (v) v->p = u->p;                             // guard: v may be null
+}
 
 void TreeBase::rb_delete(NodeBase* z)
 {
     NodeBase* x;
+    NodeBase* x_parent;              // threaded to fixup; x itself may be null
     NodeBase* y = z;
     Color::Value y_color = y->color;
 
-    if (z->left() == NIL())
+    if (!z->left())                                 // was: z->left() == NIL()
     {
         x = z->right();
+        x_parent = z->p;
         rb_transplant(z, z->right());
     }
-    else if (z->right() == NIL())
+    else if (!z->right())
     {
         x = z->left();
+        x_parent = z->p;
         rb_transplant(z, z->left());
     }
     else
@@ -54,10 +83,11 @@ void TreeBase::rb_delete(NodeBase* z)
         x = y->right();
         if (y->p == z)
         {
-            x->p = y;
+            x_parent = y;                           // was: x->p = y; (only for NIL)
         }
         else
         {
+            x_parent = y->p;                        // capture BEFORE rb_transplant(z,y) clobbers y->p
             rb_transplant(y, y->right());
             y->right() = z->right();
             y->right()->p = y;
@@ -69,51 +99,85 @@ void TreeBase::rb_delete(NodeBase* z)
     }
 
     if (y_color == Color::BLACK)
-        rb_delete_fixup(x);
+        rb_delete_fixup(x_parent, x);
 }
 
-void TreeBase::rb_delete_fixup(NodeBase* x)
+void TreeBase::rb_delete_fixup(NodeBase* p, NodeBase* x)   // x may be null
 {
-    while (x != m_root && x->color == Color::BLACK)
+    while (x != m_root && is_black(x))
     {
-        Dir::Value dir = x == x->p->right();      // side x is on
-        NodeBase* w = x->p->child[!dir];          // sibling
+        Dir::Value dir = (x == p->right());   // NOT x->p; p passed in
+        NodeBase* w = p->child[!dir];         // sibling — still guaranteed non-null
 
-        if (w->color == Color::RED)               // case 1
-        {
-            w->color = Color::BLACK;
-            x->p->color = Color::RED;
-            rb_rotate(x->p, dir);
-            w = x->p->child[!dir];                // new sibling
+        if (w->color == Color::RED)
+        {              // case 1
+            w->color = Color::BLACK; p->color = Color::RED;
+            rb_rotate(p, dir);
+            w = p->child[!dir];
         }
-
-        if (w->left()->color == Color::BLACK &&   // case 2
-            w->right()->color == Color::BLACK)
-        {
+        if (is_black(w->left()) && is_black(w->right()))
+        {   // case 2
             w->color = Color::RED;
-            x = x->p;
+            x = p; p = x->p;             // advance BOTH, not just x
         }
         else
         {
-            if (w->child[!dir]->color == Color::BLACK)    // case 3: far nephew black
-            {
-                w->child[dir]->color = Color::BLACK;      //   near nephew → black
+            if (is_black(w->child[!dir]))
+            {         // case 3
+                w->child[dir]->color = Color::BLACK;  // near nephew: provably red ⇒ non-null
                 w->color = Color::RED;
                 rb_rotate(w, !dir);
-                w = x->p->child[!dir];                    //   refetch sibling
+                w = p->child[!dir];
             }
-            w->color = x->p->color;                       // case 4
-            x->p->color = Color::BLACK;
-            w->child[!dir]->color = Color::BLACK;         //   far nephew → black
-            rb_rotate(x->p, dir);
+            w->color = p->color;               // case 4
+            p->color = Color::BLACK;
+            w->child[!dir]->color = Color::BLACK;    // far nephew: provably red ⇒ non-null
+            rb_rotate(p, dir);
             x = m_root;
         }
     }
-    x->color = Color::BLACK;
+    if (x) x->color = Color::BLACK;                  // x may be null
 }
 
+void TreeBase::rb_inorder(NodeBase* root, Callback cb, void* usrdata)
+{
+    NodeBase* curr{root};
+    while (curr)
+    {
+        if (!curr->left())
+        {
+            // If no left child, visit this node 
+            // and go right
+            cb(curr, usrdata);
+            curr = curr->right();
+        }
+        else
+        {
+            // Find the inorder predecessor of curr
+            NodeBase* prev = curr->left();
+            while (prev->right() && prev->right() != curr)
+            {
+                prev = prev->right();
+            }
 
-
+            // Make curr the right child of its 
+            // inorder predecessor
+            if (!prev->right())
+            {
+                prev->right() = curr;
+                curr = curr->left();
+            }
+            else
+            {
+                // Revert the changes made in 
+                // the tree structure
+                prev->right() = nullptr;
+                cb(curr, usrdata);
+                curr = curr->right();
+            }
+        }
+    }
+}
 
 } // namespace rb
 
