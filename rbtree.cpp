@@ -139,45 +139,38 @@ void TreeBase::rb_delete_fixup(NodeBase* p, NodeBase* x)   // x may be null
     if (x) x->color = Color::BLACK;                  // x may be null
 }
 
-void TreeBase::rb_inorder(NodeBase* root, Callback cb, void* usrdata)
+template <typename N>
+void TreeBase::rb_inorder(N* x, TraversalCB<N> cb)
 {
-    NodeBase* curr{root};
-    while (curr)
-    {
-        if (!curr->left())
-        {
-            // If no left child, visit this node 
-            // and go right
-            cb(curr, usrdata);
-            curr = curr->right();
-        }
-        else
-        {
-            // Find the inorder predecessor of curr
-            NodeBase* prev = curr->left();
-            while (prev->right() && prev->right() != curr)
-            {
-                prev = prev->right();
-            }
-
-            // Make curr the right child of its 
-            // inorder predecessor
-            if (!prev->right())
-            {
-                prev->right() = curr;
-                curr = curr->left();
-            }
-            else
-            {
-                // Revert the changes made in 
-                // the tree structure
-                prev->right() = nullptr;
-                cb(curr, usrdata);
-                curr = curr->right();
-            }
-        }
-    }
+    if (!x) return;
+    rb_inorder(x->left(), cb);
+    cb(x);
+    rb_inorder(x->right(), cb);
 }
+template <typename N>
+void TreeBase::rb_preorder(N* x, TraversalCB<N> cb)
+{
+    if (!x) return;
+    cb(x);
+    rb_inorder(x->left(), cb);
+    rb_inorder(x->right(), cb);
+}
+template <typename N>
+void TreeBase::rb_postorder(N* x, TraversalCB<N> cb)
+{
+    if (!x) return;
+    rb_inorder(x->left(), cb);
+    rb_inorder(x->right(), cb);
+    cb(x);
+}
+
+template void TreeBase::rb_inorder<NodeBase>(NodeBase*, TraversalCB<NodeBase>);
+template void TreeBase::rb_preorder<NodeBase>(NodeBase*, TraversalCB<NodeBase>);
+template void TreeBase::rb_postorder<NodeBase>(NodeBase*, TraversalCB<NodeBase>);
+
+template void TreeBase::rb_inorder<const NodeBase>(const NodeBase*, TraversalCB<const NodeBase>);
+template void TreeBase::rb_preorder<const NodeBase>(const NodeBase*, TraversalCB<const NodeBase>);
+template void TreeBase::rb_postorder<const NodeBase>(const NodeBase*, TraversalCB<const NodeBase>);
 
 } // namespace rb
 

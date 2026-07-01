@@ -22,11 +22,6 @@ namespace rb {
 
 template <typename K, typename V, typename Cmp = std::less<>, typename Alloc = std::allocator<V>>
 class Tree : private TreeBase {
-    //using K = int;
-    //using V = float;
-    //using Cmp = std::less<>;
-    //using Alloc = std::allocator<V>;
-    //using Node = rb::Node<K, V>;
 
     struct Node : NodeBase {
         K key;
@@ -113,7 +108,7 @@ public:
 
     void print_inorder() const
     {
-        rb_inorder(m_root, inorder, nullptr);
+        rb_inorder(m_root, [this](const NodeBase* n) { print(n); });
         std::cout << '\n';
     }
 private:
@@ -187,20 +182,16 @@ private:
         return true;
     }
 
-    static void inorder(const NodeBase* n, void* usrdata)
+    static void print(const NodeBase* n)
     {
-        (void)usrdata;
-        if (!n) return;
-        std::cout << (n->color == Color::RED ? "(\x1b[38;5;196mR\x1b[0m)" : "(\x1b[38;5;8mB\x1b[0m)")
-            << key_of(n) << " ";
+        if (n)
+            std::cout << (n->color == Color::RED ? "(\x1b[38;5;196mR\x1b[0m)" : "(\x1b[38;5;8mB\x1b[0m)") << key_of(n) << " ";
     }
 
     void destroy(NodeBase* n)
     {
         if (!n) return;
-        destroy(n->left());
-        destroy(n->right());
-        destroy_node(static_cast<Node*>(n));
+        rb_postorder(m_root, [this](NodeBase* rem) { destroy_node(static_cast<Node*>(rem)); });
     }
 };
 
