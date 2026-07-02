@@ -3,7 +3,6 @@
 
 #include <cstddef>
 #include <cstdint>
-//#include <iostream>
 #include <memory>
 #include <utility>
 #include <type_traits>
@@ -72,10 +71,10 @@ struct NodePtr {
 
     Color color() const noexcept { return static_cast<Color>(value & +Color::BIT); }
 
-    Node* node() noexcept { return reinterpret_cast<Node*>(addr()); }
-    const Node* node() const noexcept { return reinterpret_cast<const Node*>(addr()); }
-    Node* operator->() noexcept { return node(); }
-    const Node* operator->() const noexcept { return node(); }
+    Node* get() noexcept { return reinterpret_cast<Node*>(addr()); }
+    const Node* get() const noexcept { return reinterpret_cast<const Node*>(addr()); }
+    Node* operator->() noexcept { return get(); }
+    const Node* operator->() const noexcept { return get(); }
 
     uintptr_t operator|(Dir e) const noexcept { return value | +e; }
     uintptr_t operator|(Color e) const noexcept { return value | +e; }
@@ -93,8 +92,7 @@ constexpr NodePtr NIL = +Color::BLACK;
  *
  *   `.p` represents:
  *      1. Address of parent Node.
- *      2. Color of parent Node.
- *      3. Dir of this Node relative to parent Node.
+ *      2. Dir of this Node relative to parent Node.
  *
  *   `.children[0..1]` represents:
  *      1. Address of child Node.
@@ -117,6 +115,7 @@ struct Node {
     NodePtr& right() noexcept { return children[+Dir::RIGHT]; }
 
     Dir dir() noexcept { return static_cast<Dir>(p & Dir::BIT); }
+
 };
 
 class TreeBase {
@@ -125,12 +124,14 @@ protected:
 
     TreeBase() : m_root{NIL} {}
 
-    static void updateNode(Node* old_node, Node* new_node) noexcept
+    Node* replace(Node* oldn, Node* newn) noexcept
     {
-        new_node->update(old_node);
-        new_node->child(Dir::LEFT)->p.setPtr(new_node);
-        new_node->child(Dir::RIGHT)->p.setPtr(new_node);
-        new_node->p->child(new_node->dir()).setPtr(new_node);
+        newn->update(oldn);
+        if (auto& l = newn->left())  l->p.setPtr(newn);
+        if (auto& r = newn->right()) r->p.setPtr(newn);
+        NodePtr& slot = newn->p ? newn->p->child(newn->dir()) : m_root;
+        slot.setPtr(newn);
+        return oldn;
     }
 };
 
@@ -143,7 +144,7 @@ public:
 
     Tree() = default;
 
-    void insert(Node* node)
+    void insert(Node* z)
     {
         NodePtr p{NIL};
         NodePtr curr{m_root};
@@ -151,14 +152,30 @@ public:
         while (curr != NIL)
         {
             p = curr;
-            int dir = m_cmp(node, toNode(curr));
-            if (dir > 0) curr = toNode(curr)->child[+Dir::RIGHT];
-            else if (dir < 0) curr = toNode(curr)->child[+Dir::LEFT];
+            int dir = m_cmp(z, curr.get());
+            if (dir > 0) curr = curr->right();
+            else if (dir < 0) curr = curr->left();
             else
             {
-                updateNode(curr.node(), node);
-                break;
+                replace(curr.get(), z);
+                return;
             }
+        }
+
+        z->p.setPtr(p.get());
+        if (p == NIL)
+        {
+            m_root.setPtr(z);
+        }
+        else if (p->left() == NIL)
+        {
+            p->left().setPtr(z);
+            z->p.setDir(Dir::LEFT);
+        }
+        else
+        {
+            p->right().setPtr(z);
+            z->p.setDir(Dir::RIGHT);
         }
     }
 };
