@@ -47,6 +47,13 @@ struct NodePtr {
     constexpr NodePtr(uintptr_t v) : value{v} {}
     constexpr NodePtr(Node* n) : value{reinterpret_cast<uintptr_t>(n)} {}
 
+    bool operator==(NodePtr o) const noexcept { return addr() == o.addr(); }
+    bool operator!=(NodePtr o) const noexcept { return addr() != o.addr(); }
+    bool operator<(NodePtr o) const noexcept { return addr() < o.addr(); }
+    bool operator>(NodePtr o) const noexcept { return addr() > o.addr(); }
+    explicit operator bool() const noexcept { return addr() != 0; }
+    explicit operator uintptr_t() const noexcept { return value; }
+
     NodePtr& setPtr(Node* n) noexcept
     {
         value = (value & TAG_MASK) | reinterpret_cast<uintptr_t>(n);
@@ -63,39 +70,53 @@ struct NodePtr {
         return *this;
     }
 
-    Node* node() noexcept { return reinterpret_cast<Node*>(value & PTR_MASK); }
-    Node* operator->() noexcept { return node(); }
+    Color color() const noexcept { return static_cast<Color>(value & +Color::BIT); }
 
-    explicit operator uintptr_t() const noexcept { return value; }
+    Node* node() noexcept { return reinterpret_cast<Node*>(addr()); }
+    const Node* node() const noexcept { return reinterpret_cast<const Node*>(addr()); }
+    Node* operator->() noexcept { return node(); }
+    const Node* operator->() const noexcept { return node(); }
 
     uintptr_t operator|(Dir e) const noexcept { return value | +e; }
     uintptr_t operator|(Color e) const noexcept { return value | +e; }
     uintptr_t operator&(Dir e) const noexcept { return value & +e; }
     uintptr_t operator&(Color e) const noexcept { return value & +e; }
 
+private:
+    uintptr_t addr() const noexcept { return value & PTR_MASK; }
 };
 
 constexpr NodePtr NIL = +Color::BLACK;
 
+/**
+ * Overview of struct Node:
+ *
+ *   `.p` represents:
+ *      1. Address of parent Node.
+ *      2. Color of parent Node.
+ *      3. Dir of this Node relative to parent Node.
+ *
+ *   `.children[0..1]` represents:
+ *      1. Address of child Node.
+ *      2. Color of child Node.
+ */
 struct Node {
     NodePtr p;
-    NodePtr child[2];
+    NodePtr children[2];
 
-    Node() : p{NIL}, child{NIL,NIL} {}
+    Node() : p{NIL}, children{NIL,NIL} {}
+    void update(const Node* o) noexcept
+    {
+        p = o->p;
+        children[+Dir::LEFT] = o->children[+Dir::LEFT];
+        children[+Dir::RIGHT] = o->children[+Dir::RIGHT];
+    }
 
-    NodePtr& left() noexcept { return child[+Dir::LEFT]; }
-    NodePtr& right() noexcept { return child[+Dir::RIGHT]; }
-
-    NodePtr& as_child() noexcept { p->child[+dir()]; }
-    NodePtr& as_parent(Dir child_dir) noexcept { child[+child_dir]->p; }
-
-
-    Color color_left() noexcept { return static_cast<Color>(child[+Dir::LEFT] & Color::BIT); }
-    Color color_right() noexcept { return static_cast<Color>(child[+Dir::RIGHT] & Color::BIT); }
-    Color color_p() noexcept { return static_cast<Color>(p & Color::BIT); }
+    NodePtr& child(Dir e) noexcept { return children[+e]; }
+    NodePtr& left() noexcept { return children[+Dir::LEFT]; }
+    NodePtr& right() noexcept { return children[+Dir::RIGHT]; }
 
     Dir dir() noexcept { return static_cast<Dir>(p & Dir::BIT); }
-
 };
 
 class TreeBase {
@@ -104,11 +125,12 @@ protected:
 
     TreeBase() : m_root{NIL} {}
 
-    static void replaceNode(Node* old_node, Node* new_node) noexcept
+    static void updateNode(Node* old_node, Node* new_node) noexcept
     {
-        old_node->as_parent(Dir::LEFT).setPtr(new_node);
-        old_node->as_parent(Dir::RIGHT).setPtr(new_node);
-        old_node->p->child[+old_node->dir()].setPtr(new_node);
+        new_node->update(old_node);
+        new_node->child(Dir::LEFT)->p.setPtr(new_node);
+        new_node->child(Dir::RIGHT)->p.setPtr(new_node);
+        new_node->p->child(new_node->dir()).setPtr(new_node);
     }
 };
 
@@ -134,7 +156,7 @@ public:
             else if (dir < 0) curr = toNode(curr)->child[+Dir::LEFT];
             else
             {
-                replaceNode(curr, node);
+                updateNode(curr.node(), node);
                 break;
             }
         }
